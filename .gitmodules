@@ -1,9 +1,6 @@
 [submodule "kvasir"]
 	path = kvasir
-	url = ssh://git@dominicp.de/306_kvasir
+	url = git@dominicp:306_kvasir
 [submodule "chip"]
 	path = chip
-	url = ssh://git@dominicp.de/kvasir_rp2040
-[submodule "mcufont"]
-	path = mcufont
-	url = ssh://git@dominicp.de/mcufont
+	url = git@dominicp:kvasir_rp2040
