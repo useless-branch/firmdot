@@ -4,3 +4,9 @@
 [submodule "chip"]
 	path = chip
 	url = git@dominicp:kvasir_rp2040
+[submodule "aglio"]
+	path = aglio
+	url = git@dominicp.de:aglio
+[submodule "recreated_goon"]
+	path = recreated_goon
+	url = git@dominicp.de:recreated_goon

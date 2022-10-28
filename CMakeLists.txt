@@ -12,6 +12,15 @@ target_configure_kvasir(development
     USE_LOG
 )
 
+add_subdirectory(aglio)
+add_subdirectory(recreated_goon)
+
+recreated_goon_generate(
+        type_descriptors
+        OUTPUT_DIRECTORY type_descriptors
+        FILES src/package.hpp
+)
+
 #add_subdirectory(mcufont)
 
 #mcufont_generate(sub_font
@@ -22,8 +31,10 @@ target_configure_kvasir(development
 
 #mcufont_add_library(development FONTS sub_font)
 
+target_link_libraries(development aglio type_descriptors)
 
 add_executable(release src/main.cpp)
+target_link_libraries(release aglio type_descriptors)
 target_configure_kvasir(release
     OPTIMIZATION_STRATEGY size
 )
