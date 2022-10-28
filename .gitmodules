@@ -1,9 +1,9 @@
 [submodule "kvasir"]
 	path = kvasir
-	url = git@dominicp:306_kvasir
+	url = git@dominicp.de:306_kvasir
 [submodule "chip"]
 	path = chip
-	url = git@dominicp:kvasir_rp2040
+	url = git@dominicp.de:kvasir_rp2040
 [submodule "aglio"]
 	path = aglio
 	url = git@dominicp.de:aglio
