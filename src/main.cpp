@@ -21,12 +21,14 @@ struct Crc {
 
 using packager = aglio::Packager<aglio::CrcConfig<Crc>>;
 
+static constexpr auto myID{2};
+
 int main() {
     UC_LOG_D("{}", "Test");
     std::array<std::uint8_t, 84> matrix;
     matrix.fill(0);
 
-    FlipDotMatrix<24, 28> FDMatrix;
+    FlipDotMatrix<24, 28, Clock> FDMatrix;
     FDMatrix.fill(false);
 
     auto next        = Clock::time_point{} + std::chrono::milliseconds(400);
@@ -41,17 +43,18 @@ int main() {
         auto now = Clock::now();
         if(now > next) {
             UC_LOG_D("I am alive");
+            /*
             if(Uart::operationState() == Uart::OperationState::succeeded){
                 UC_LOG_D("Sending...");
                 Uart::send_nocopy(test);
             }
             if(Uart::operationState() == Uart::OperationState::failed){
                 UC_LOG_E("Failed to send!");
-            }
+            }*/
             next = now + std::chrono::seconds(1);
         }
 
-        if(!Uart::rxbuffer_.empty()){
+        while(!Uart::rxbuffer_.empty()){
             std::optional<std::byte> sna;
             Uart::rxbuffer_.pop_into(sna);
             if(sna){
@@ -60,8 +63,14 @@ int main() {
                     auto optionalPack = packager::unpack<package::Package>(rxBuffer);
                     if(optionalPack)
                     {
-                        UC_LOG_D("{}", *optionalPack);
-                        apply(set(HW::Pin::Led{}));
+                        auto& pack = *optionalPack;
+                        //UC_LOG_D("{}", pack);
+                        if(pack.panelID == myID){
+                            //UC_LOG_D("{}", pack);
+                            std::memcpy(&FDMatrix.matrix, &pack.matrixData, pack.matrixData.size());
+                            FDMatrix.writeMatrix();
+                        }
+                        apply(toggle(HW::Pin::Led{}));
                     }
                     else{
                         break;
@@ -69,19 +78,6 @@ int main() {
                 }
             }
         }
-        else
-        {
-            apply(clear(HW::Pin::Led{}));
-        }
-
-
-
-        if(now > everySecond) {
-
-            everySecond = now + std::chrono::milliseconds(400);
-        }
-
-        std::memcpy(&FDMatrix.matrix, &matrix, sizeof(matrix));
         FDMatrix.handler();
         StackProtector::handler();
     }

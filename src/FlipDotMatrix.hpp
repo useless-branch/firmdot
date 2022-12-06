@@ -59,16 +59,36 @@ struct PixelAddress {
     }
 };
 
-template<std::size_t columns, std::size_t pixPerRow>
+struct PinsMuxData {
+    static constexpr auto A0{HW::Pin::A0MuxData{}};
+    static constexpr auto A1{HW::Pin::A1MuxData{}};
+    static constexpr auto A2{HW::Pin::A2MuxData{}};
+    static constexpr auto B0{HW::Pin::B0MuxData{}};
+    static constexpr auto B1{HW::Pin::B1MuxData{}};
+};
+
+struct PinsMuxHiLo {
+    static constexpr auto A0{HW::Pin::A0MuxHiLo{}};
+    static constexpr auto A1{HW::Pin::A1MuxHiLo{}};
+    static constexpr auto A2{HW::Pin::A2MuxHiLo{}};
+    static constexpr auto B0{HW::Pin::B0MuxHiLo{}};
+    static constexpr auto B1{HW::Pin::B1MuxHiLo{}};
+};
+
+template<std::size_t columns, std::size_t pixPerRow, typename Clock>
 struct FlipDotMatrix {
     static constexpr auto arraySize{(columns * pixPerRow) / (sizeof(std::uint8_t) * 8)};
-    using Clock = HW::SystickClock;
-
+    std::size_t flushCounter{0};
     std::array<std::uint8_t, arraySize> matrix{};
 
 private:
     std::array<std::uint8_t, arraySize> oldMatrix{};
     std::array<std::uint8_t, arraySize> diffMatrix{};
+    PixelAddress<PinsMuxHiLo>           rowAddress{1};
+    PixelAddress<PinsMuxData>           pixelAddress{1};
+    std::size_t                         currentByte{0};
+    std::size_t                         currentBit{0};
+    bool                                currentPixelValue{false};
 
 public:
     explicit FlipDotMatrix() {
@@ -90,22 +110,6 @@ public:
         }
     }
 
-    struct PinsMuxData {
-        static constexpr auto A0{HW::Pin::A0MuxData{}};
-        static constexpr auto A1{HW::Pin::A1MuxData{}};
-        static constexpr auto A2{HW::Pin::A2MuxData{}};
-        static constexpr auto B0{HW::Pin::B0MuxData{}};
-        static constexpr auto B1{HW::Pin::B1MuxData{}};
-    };
-
-    struct PinsMuxHiLo {
-        static constexpr auto A0{HW::Pin::A0MuxHiLo{}};
-        static constexpr auto A1{HW::Pin::A1MuxHiLo{}};
-        static constexpr auto A2{HW::Pin::A2MuxHiLo{}};
-        static constexpr auto B0{HW::Pin::B0MuxHiLo{}};
-        static constexpr auto B1{HW::Pin::B1MuxHiLo{}};
-    };
-
     void setPixelOutput(bool pixelState) {
         if(pixelState) {
             apply(
@@ -120,18 +124,18 @@ public:
               clear(HW::Pin::EnableMuxLo{}),
               set(HW::Pin::EnableMuxHi{}));
         }
-        Clock::delay<std::chrono::microseconds, 250>();
+        //Clock::delay<std::chrono::microseconds, 200>();
 
         apply(
           clear(HW::Pin::EnableMuxHi{}),
           clear(HW::Pin::EnableMuxLo{}),
           clear(HW::Pin::EnableMuxData{}));
 
-        Clock::delay<std::chrono::microseconds, 200>();
+        //Clock::delay<std::chrono::microseconds, 150>();
     }
 
     void compareMatrix() {
-        diffMatrix.fill(0);
+        diffMatrix.fill(0x00);
         for(std::size_t i{0}; i < matrix.size(); ++i) {
             auto& current = matrix[i];
             auto& diff    = diffMatrix[i];
@@ -147,36 +151,137 @@ public:
         }
     }
 
-    void writeMatrix() {
-        compareMatrix();
-        flush();
-        flush();
+    void resetWriting()
+    {
+        currentByte          = 0;
+        currentBit           = 0;
+        counter              = 0;
+        pixelAddress.address = 1;
+        rowAddress.address   = 1;
+        st = State::idle;
     }
 
-    void flush() {
-        PixelAddress<PinsMuxHiLo> rowAddress{1};
-        PixelAddress<PinsMuxData> pixelAddress{1};
-        std::size_t               counter{0};
-        for(std::size_t i{0}; i < matrix.size(); ++i) {
-            auto& current = matrix[i];
-            auto& diff    = diffMatrix[i];
-            for(std::size_t j{0}; j < 8; ++j) {
-                if(binUtil::checkBit(diff, j)) {
+    void writeFullPicture(){
+
+    }
+
+    void writeMatrix() {
+        if(frameCounter > 3){
+            frameCounter = 0;
+            diffMatrix.fill(0xFF);
+            flush();
+        }
+        else{
+            compareMatrix();
+            flush();
+        }
+
+    }
+
+    void flush() { flushCounter += 3; }
+
+    enum class State { idle, flush, set, wait2reset, reset, wait2idle, incrementPixel };
+    State st{State::idle};
+    using tp = typename Clock::time_point;
+    tp                    setTime;
+    tp                    resetTime;
+    static constexpr auto set_time{std::chrono::microseconds(100)};
+    static constexpr auto reset_time{std::chrono::microseconds(50)};
+    std::size_t           counter{0};
+    std::size_t frameCounter{0};
+
+    void handler() {
+        auto const currentTime = Clock::now();
+        switch(st) {
+        case State::idle:
+            {
+                if(flushCounter > 0){
+                    ++frameCounter;
+                    st = State::flush;
+                }
+            }
+            break;
+        case State::flush:
+            {
+                if(currentByte > matrix.size()) {
+                    resetWriting();
+                    UC_LOG_D("WriteCounter {}", flushCounter);
+                    --flushCounter;
+                    st                   = State::idle;
+                    break;
+                }
+                if(currentBit > 7) {
+                    currentBit = 0;
+                    ++currentByte;
+                }
+                auto& current = matrix[currentByte];
+                auto& diff    = diffMatrix[currentByte];
+
+                if(binUtil::checkBit(diff, currentBit)) {
                     pixelAddress.setHWAddress();
                     rowAddress.setHWAddress();
-                    auto output = binUtil::checkBit(current, j);
-                    setPixelOutput(output);
+                    currentPixelValue = binUtil::checkBit(current, currentBit);
+                    st                = State::set;
+                } else {
+                    st = State::incrementPixel;
                 }
+            }
+            break;
+        case State::set:
+            {
+                //UC_LOG_D("Setting Pixel ({},{}) to {}", currentByte, currentBit, currentPixelValue);
+                if(currentPixelValue) {
+                    apply(
+                      set(HW::Pin::DataMuxData{}),
+                      set(HW::Pin::EnableMuxData{}),
+                      set(HW::Pin::EnableMuxLo{}),
+                      clear(HW::Pin::EnableMuxHi{}));
+                } else {
+                    apply(
+                      clear(HW::Pin::DataMuxData{}),
+                      set(HW::Pin::EnableMuxData{}),
+                      clear(HW::Pin::EnableMuxLo{}),
+                      set(HW::Pin::EnableMuxHi{}));
+                }
+                st      = State::wait2reset;
+                setTime = currentTime + set_time;
+            }
+            break;
+        case State::wait2reset:
+            {
+                if(currentTime > setTime) {
+                    st = State::reset;
+                }
+            }
+            break;
+        case State::reset:
+            {
+                apply(
+                  clear(HW::Pin::EnableMuxHi{}),
+                  clear(HW::Pin::EnableMuxLo{}),
+                  clear(HW::Pin::EnableMuxData{}));
+                resetTime = currentTime + reset_time;
+                st        = State::wait2idle;
+            }
+            break;
+        case State::wait2idle:
+            {
+                if(currentTime > resetTime) {
+                    st = State::incrementPixel;
+                }
+            }
+            break;
+        case State::incrementPixel:
+            {
                 ++pixelAddress;
                 ++counter;
                 if(counter % 28 == 0) {
                     ++rowAddress;
                 }
+                ++currentBit;
+                st = State::flush;
             }
+            break;
         }
     }
-
-    enum class State { reset, init };
-
-    void handler() { writeMatrix(); }
 };

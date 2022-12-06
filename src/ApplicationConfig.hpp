@@ -17,7 +17,7 @@ struct DMAConfig {
 using DMA = Kvasir::DMA::DmaBase<DMAConfig>;
 
 using Uart
-  = Kvasir::UART::UartBehavior<HW::UartConfig, DMA, DMA::Channel::ch0, DMA::Priority::low, 512>;
+  = Kvasir::UART::UartBehavior<HW::UartConfig, DMA, DMA::Channel::ch0, DMA::Priority::low, 2048>;
 
 
 using Startup = Kvasir::Startup::Startup<
