@@ -14,7 +14,7 @@ struct binUtil{
 
     template <typename T>
     static void clearBit(T & value, std::size_t n){
-        value &= (1UL << n);
+        value &= ~(1UL << n);
     }
 
     template <typename T>
